@@ -1,0 +1,17 @@
+# send only code to the build
+**
+!Dockerfile
+!docker-compose.yml
+!requirements.txt
+!main_train_TCN.py
+
+# never bake data/outputs into the image (we mount Files/ at runtime)
+Files/
+Images/
+Classifier Model/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+.env
+.git/

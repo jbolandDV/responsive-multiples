@@ -1,0 +1,6 @@
+numpy
+pandas
+scikit-learn
+matplotlib
+keras-tcn
+# Do NOT add tensorflow here; we use the TF base image.

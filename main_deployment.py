@@ -21,7 +21,6 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 ### CONFIGURATION:
 
-num_tps_to_predict = 12
 mean_type = "rms" # "rms" or "mean": "rms" for root mean square, "mean" for arithmetic mean. using this, you choose what metric is used for optimization and for the final results.
 threshold = 7 # the sum of the optimized mailings for the future time-steps should not be bigger than threshold
 lower_limit = 0 # number of mailings per month should not be below the lower_limit
@@ -44,12 +43,43 @@ with open(config_file_path, "r") as f:
     config = json.load(f)
 decay_coefficient = config["decay_coefficient"]
 model_window_size = config["model_window_size"]
-cut_off_date = config["cut_off_date"]
 id_col = config["id_col"]
 exclude_one_time_donors = config["exclude_one_time_donors"]
 one_off_ids = config["one_off_ids"]
-cut_off_date = pd.Period(cut_off_date, freq="M")
-cut_off_date = cut_off_date - 1 # decrement the cut-off date by one month for deployment (to account for incrementing it in the main_process_datasets.py code)
+transaction_dataset_name = config["transaction_dataset_name"]
+tran_date_col = config["tran_date_col"]  # Note: this is "date" in the transaction files.
+
+# Dynamically set deployment cut-off and projection horizon based on transaction data.
+dataset_path = os.path.join(current_dir, "Datasets", transaction_dataset_name)
+if transaction_dataset_name.endswith(".csv"):
+    tran_dataset = pd.read_csv(dataset_path, parse_dates=[tran_date_col], encoding="latin1")
+elif transaction_dataset_name.endswith(".xlsx"):
+    tran_dataset = pd.read_excel(dataset_path, parse_dates=[tran_date_col], engine="openpyxl")
+else:
+    raise ValueError("Unsupported transaction file format. Please provide a .csv or .xlsx file.")
+
+if tran_dataset.empty or tran_dataset[tran_date_col].isna().all():
+    raise ValueError("Transaction dataset has no valid dates. Cannot compute dynamic cut-off date.")
+
+last_transaction_date = tran_dataset[tran_date_col].max()
+last_transaction_period = pd.Period(last_transaction_date, freq="M")
+year_end_period = pd.Period(f"{last_transaction_date.year}-12", freq="M")
+
+# Number of months left to predict in the same calendar year, excluding the last observed month.
+num_tps_to_predict = (year_end_period - last_transaction_period).n
+if num_tps_to_predict <= 0:
+    raise ValueError(
+        "No future months remain in the calendar year after the latest transaction date. "
+        "Dynamic shrinking-window deployment needs at least one month left to predict."
+    )
+
+# Anchor predictions on the latest observed month; timeline starts at the next month.
+cut_off_date = last_transaction_period
+print(
+    f"Dynamic deployment horizon configured from transaction file: "
+    f"last_transaction_date={last_transaction_date.date()}, "
+    f"year_end={year_end_period}, num_tps_to_predict={num_tps_to_predict}."
+)
 
 
 
